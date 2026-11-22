@@ -4,8 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'ORCA_Android_Modular_v0_1_Source.zip'
-      - '.github/workflows/android-apk.yml'
+      - 'ORCA_Android_Modular_v0_2_Source.zip'
 
 permissions:
   contents: read
@@ -17,15 +16,15 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Unpack single uploaded source ZIP
+      - name: Unpack single source ZIP
         run: |
           set -euo pipefail
-          test -s ORCA_Android_Modular_v0_1_Source.zip
+          test -s ORCA_Android_Modular_v0_2_Source.zip
           mkdir -p extracted
-          unzip -q ORCA_Android_Modular_v0_1_Source.zip -d extracted
-          test -s extracted/ORCA_Android_Modular_v0_1_Source/settings.gradle
-          test -s extracted/ORCA_Android_Modular_v0_1_Source/app/build.gradle
-          test -s extracted/ORCA_Android_Modular_v0_1_Source/scripts/fetch-orca.sh
+          unzip -q ORCA_Android_Modular_v0_2_Source.zip -d extracted
+          test -s extracted/ORCA_Android_Modular_v0_2_Source/app/build.gradle
+          test -s extracted/ORCA_Android_Modular_v0_2_Source/app/src/main/java/com/oll/orcamodular/ClockScheduler.java
+          test -s extracted/ORCA_Android_Modular_v0_2_Source/scripts/fetch-orca.sh
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -33,64 +32,51 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK without obsolete tools package
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
           packages: ''
-
-      - name: Verify Android SDK manager
-        run: |
-          set -euo pipefail
-          command -v sdkmanager
-          sdkmanager --version
 
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Install Android SDK packages
+      - name: Install required Android tools
         run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0' 'cmake;3.22.1' 'ndk;27.2.12479018'
 
-      - name: Fix Java MIDI port API and session-save compiler errors
-        working-directory: extracted/ORCA_Android_Modular_v0_1_Source
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          base = Path('app/src/main/java/com/oll/orcamodular')
-          midi = base / 'MidiIO.java'
-          s = midi.read_text()
-          assert 'MidiDeviceInputPort' in s and 'MidiDeviceOutputPort' in s
-          s = s.replace('MidiDeviceInputPort', 'MidiInputPort').replace('MidiDeviceOutputPort', 'MidiOutputPort')
-          midi.write_text(s)
-          activity = base / 'MainActivity.java'
-          s = activity.read_text()
-          assert 'String result=session?' in s and 'out.write(result.getBytes(' in s
-          s = s.replace('String result=session?', 'String payload=session?', 1)
-          s = s.replace('out.write(result.getBytes(', 'out.write(payload.getBytes(', 1)
-          activity.write_text(s)
-          print('Android MIDI port API and session save Java errors corrected.')
-          PY
-
-      - name: Check preset library and native DSP sources
-        working-directory: extracted/ORCA_Android_Modular_v0_1_Source
+      - name: Validate source and 40 pattern presets
+        working-directory: extracted/ORCA_Android_Modular_v0_2_Source
         run: python3 scripts/verify-kit.py
 
-      - name: Fetch original Orca and apply Android bridge
-        working-directory: extracted/ORCA_Android_Modular_v0_1_Source
+      - name: Test monotonic clock and browser bridge
+        working-directory: extracted/ORCA_Android_Modular_v0_2_Source
+        run: |
+          set -euo pipefail
+          mkdir -p build/clock-test
+          javac -d build/clock-test \
+            tests/android/os/Process.java \
+            app/src/main/java/com/oll/orcamodular/ClockScheduler.java \
+            tests/com/oll/orcamodular/ClockTest.java
+          java -cp build/clock-test com.oll.orcamodular.ClockTest
+          node --check app/src/main/assets/mobile/android-bridge.js
+          node tests/bridge.test.js app/src/main/assets/mobile/android-bridge.js
+
+      - name: Fetch original Orca source and apply Android bridge
+        working-directory: extracted/ORCA_Android_Modular_v0_2_Source
         run: bash scripts/fetch-orca.sh
 
-      - name: Check Orca bridge JavaScript
-        working-directory: extracted/ORCA_Android_Modular_v0_1_Source
+      - name: Check generated Orca bridge
+        working-directory: extracted/ORCA_Android_Modular_v0_2_Source
         run: node --check app/src/main/assets/orca/android-bridge.js
 
       - name: Build Android debug APK
-        working-directory: extracted/ORCA_Android_Modular_v0_1_Source
+        working-directory: extracted/ORCA_Android_Modular_v0_2_Source
         run: gradle --no-daemon --stacktrace :app:assembleDebug
 
-      - name: Publish APK
+      - name: Publish installable debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: ORCA-Modular-Android-debug-APK
-          path: extracted/ORCA_Android_Modular_v0_1_Source/app/build/outputs/apk/debug/app-debug.apk
+          name: ORCA-Modular-Android-v0.2-debug-APK
+          path: extracted/ORCA_Android_Modular_v0_2_Source/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
