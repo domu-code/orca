@@ -52,6 +52,26 @@ jobs:
       - name: Install Android SDK packages
         run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0' 'cmake;3.22.1' 'ndk;27.2.12479018'
 
+      - name: Fix Java MIDI port API and session-save compiler errors
+        working-directory: extracted/ORCA_Android_Modular_v0_1_Source
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          base = Path('app/src/main/java/com/oll/orcamodular')
+          midi = base / 'MidiIO.java'
+          s = midi.read_text()
+          assert 'MidiDeviceInputPort' in s and 'MidiDeviceOutputPort' in s
+          s = s.replace('MidiDeviceInputPort', 'MidiInputPort').replace('MidiDeviceOutputPort', 'MidiOutputPort')
+          midi.write_text(s)
+          activity = base / 'MainActivity.java'
+          s = activity.read_text()
+          assert 'String result=session?' in s and 'out.write(result.getBytes(' in s
+          s = s.replace('String result=session?', 'String payload=session?', 1)
+          s = s.replace('out.write(result.getBytes(', 'out.write(payload.getBytes(', 1)
+          activity.write_text(s)
+          print('Android MIDI port API and session save Java errors corrected.')
+          PY
+
       - name: Check preset library and native DSP sources
         working-directory: extracted/ORCA_Android_Modular_v0_1_Source
         run: python3 scripts/verify-kit.py
