@@ -33,12 +33,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Verify preinstalled Android SDK
+      - name: Set up Android SDK without obsolete tools package
+        uses: android-actions/setup-android@v3
+        with:
+          packages: ''
+
+      - name: Verify Android SDK manager
         run: |
           set -euo pipefail
-          echo "ANDROID_HOME=${ANDROID_HOME}"
-          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unset}"
-          test -d "${ANDROID_HOME}"
           command -v sdkmanager
           sdkmanager --version
 
